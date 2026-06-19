@@ -1,3 +1,12 @@
+Metadata-Version: 2.4
+Name: geometryND
+Version: 0.1.0
+Summary: N-dimensional spheres and ellipsoids
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: scipy
+
 # GeometryND
 
 A lightweight Python package for fitting and bounding **n-dimensional spheres and ellipsoids**.
@@ -287,9 +296,6 @@ Uses:
 - Convex hull reduction
 - Recursive exact circumsphere fitting
 
-![Monkey Bounding Sphere](images/bounding_sphere_monkey01.png "Minimum Bounding Sphere & boundary points")
-
-
 ### Minimum Enclosing Ellipsoid
 
 Uses:
@@ -298,8 +304,8 @@ Uses:
 - Convex hull preprocessing
 - Weight-based boundary-point extraction
 
-![Bunny Bounding Ellipsoid](images/bounding_ellipsoid_bunny01.png "Minimum Bounding Ellipsoid & boundary points")
-![Bunny Bounding Ellipsoid](images/bounding_ellipsoid_bunny02.png "Minimum Bounding Ellipsoid & boundary points")
+![Bunny Bounding Shapes](images/bounding_ellipsoid_bunny01.png "Minimum Bounding Ellipsoid & boundary points")
+![Bunny Bounding Shapes](images/bounding_ellipsoid_bunny02.png "Minimum Bounding Ellipsoid & boundary points")
 
 ### Best-Fit Ellipsoid
 

@@ -1,0 +1,8 @@
+README.md
+pyproject.toml
+geometryND/__init__.py
+geometryND.egg-info/PKG-INFO
+geometryND.egg-info/SOURCES.txt
+geometryND.egg-info/dependency_links.txt
+geometryND.egg-info/requires.txt
+geometryND.egg-info/top_level.txt

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geometryND"
+version = "0.1.0"
+description = "N-dimensional spheres and ellipsoids"
+readme = "README.md"
+requires-python = ">=3.9"
+
+dependencies = [
+    "numpy",
+    "scipy"
+]
+
+[tool.setuptools.packages.find]
+include = ["geometryND*"]
