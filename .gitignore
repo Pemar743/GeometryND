@@ -1,2 +1,18 @@
-.venv
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Package metadata
 *.egg-info/
+
+# Build artifacts
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# IDEs
+.vscode/
+.idea/
