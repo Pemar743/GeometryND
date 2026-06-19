@@ -4,8 +4,8 @@ A lightweight Python package for fitting and bounding **n-dimensional spheres an
 
 The package provides tools for:
 
-- Exact minimum enclosing spheres in arbitrary dimensions
-- Minimum-volume enclosing ellipsoids (Khachiyan algorithm)
+- Exact minimum enclosing spheres in arbitrary dimensions (Welzl's algorithm)
+- Minimum-volume enclosing ellipsoids (Khachiyan's algorithm)
 - Least-squares ellipsoid fitting
 - RANSAC-based robust ellipsoid fitting
 - Intrinsic dimensionality detection
