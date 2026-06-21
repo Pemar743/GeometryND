@@ -2,11 +2,174 @@ import sys
 
 from scipy.spatial import ConvexHull
 import numpy as np
-from numpy.linalg import lstsq, eig, solve
 import math
-# from functools import cached_property
+from abc import ABC, abstractmethod
 
-class EllipsoidND:
+
+class GeometryND(ABC):
+    """Abstract base class for n-dimensional geometric shapes."""
+    
+    @abstractmethod
+    def __repr__(self):
+        """Return a string representation of the shape."""
+        pass
+
+    @property
+    @abstractmethod
+    def n(self):
+        """Ambient dimension of the shape."""
+        pass
+    
+    @property
+    @abstractmethod
+    def volume(self):
+        """Compute the n-dimensional volume of the shape."""
+        pass
+
+    @abstractmethod
+    def get_residuals(self, X):
+        """Compute residuals of points relative to the shape."""
+        pass
+
+    @abstractmethod
+    def minimum_enclosing(self, X, **kwargs):
+        """Compute the minimum enclosing shape for a set of points."""
+        pass
+
+    @staticmethod
+    def project_to_subspace(points: np.ndarray, tol: float = 1e-9):
+        """
+        Project a set of points into its intrinsic lower-dimensional affine subspace
+        if it is degenerate.
+
+        Parameters
+        ----------
+        points : (M, D) ndarray
+            Input points in N-D space.
+        tol : float
+            Tolerance for detecting rank deficiency.
+
+        Returns
+        -------
+        points_proj : (M, r) ndarray
+            Points projected into r-dimensional intrinsic subspace.
+        basis : (r, n) ndarray
+            Orthonormal basis of the intrinsic subspace.
+        offset : (D,) ndarray
+            Offset used for centering before projection (first point).
+        is_in_subspace : bool
+            True if the points lie in a lower-dimensional subspace.
+        """
+        points = np.asarray(points)
+        M, D = points.shape
+
+        # Compute rank
+        rank = GeometryND.intrinsic_dimension(points, tol=tol, return_centered_pts=False)
+        offset = points[0]
+        centered = points - offset
+        if rank < D:
+            # Project into lower-dimensional intrinsic subspace
+            U, S, Vt = np.linalg.svd(centered, full_matrices=False)
+            basis = Vt[:rank]  # orthonormal basis of intrinsic subspace
+            points_proj = centered @ basis.T
+            return points_proj, basis, offset, True
+
+        # Full-rank: return original points with identity basis
+        return centered, np.eye(D), offset, False
+
+    @staticmethod
+    def lift_from_subspace(points_sub, basis, offset):
+        """
+        Lift points from a lower-dimensional subspace back to the original N-D space.
+
+        Parameters
+        ----------
+        points_sub : (M, k) or (k,) ndarray
+            Points in the k-dimensional subspace (or a single point)
+        basis : (k, N) ndarray
+            Basis of the subspace (rows are basis vectors)
+        offset : (N,) ndarray
+            Offset of the subspace origin in N-D space
+
+        Returns
+        -------
+        points_nd : (M, N) or (N,) ndarray
+            Points mapped back to N-D space
+        """
+        points_sub = np.atleast_2d(points_sub)  # ensure 2D for matrix multiplication
+        lifted = offset + points_sub @ basis
+        if lifted.shape[0] == 1:
+            return lifted[0]  # return 1D array if input was a single point
+        return lifted
+    
+    # -------------------------------------------------------------------------
+    # Helper functions for geometric checks
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def is_in_k_subspace( points, k, tol=1e-6):
+        """
+        Check if a set of points lies in a k-dimensional affine subspace in N-D space.
+
+        Parameters
+        ----------
+        points : array-like, shape (M, N)
+            List of M points in N-dimensional space.
+        k : int
+            Dimension of the subspace (1=line, 2=plane, etc.).
+        tol : float
+            Tolerance for linear dependence (smaller = stricter).
+
+        Returns
+        -------
+        bool
+            True if points lie in a k-dimensional subspace, False otherwise.
+        """
+        points = np.asarray(points)
+        return GeometryND.intrinsic_dimension(points, tol=tol) <= k
+
+    @staticmethod
+    def intrinsic_dimension(points, tol=1e-9, return_centered_pts=False):
+        """
+        Return the intrinsic affine dimension spanned by a set of points.
+        For example:
+        - 0: single point
+        - 1: colinear (line)
+        - 2: coplanar (plane)
+        - 3: volume, etc.
+        """
+        points = np.asarray(points)
+        M, D = points.shape
+
+        if M <= 1:
+            return 0
+        if M == 2:
+            return 1
+
+        # translate to origin of affine subspace
+        origin = points[0]
+        centered = points - origin
+
+        rank = np.linalg.matrix_rank(centered, tol=tol)
+        # if return_centered_pts:
+        #     return rank, centered, origin
+        return rank
+
+
+    # ----------------------------
+    # Convenience wrappers
+    # ----------------------------
+
+    @staticmethod
+    def is_collinear(points, tol=1e-6):
+        """Check if the first three points are nearly collinear in N-D."""
+        return GeometryND.is_in_k_subspace(points, k=1, tol=tol)
+
+    @staticmethod
+    def is_coplanar(points, tol=1e-6):
+        """Check if the first four points are nearly coplanar in N-D."""
+        return GeometryND.is_in_k_subspace(points, k=2, tol=tol)
+
+class EllipsoidND(GeometryND):
     def __init__(self, center: np.ndarray, A: np.ndarray):
         """
         n-dimensional ellipsoid defined by (x - c)^T A (x - c) = 1,
@@ -72,72 +235,6 @@ class EllipsoidND:
         X_shift = X - c
         r = np.einsum('ij,jk,ik->i', X_shift, A, X_shift) - 1
         return r
-
-    @staticmethod
-    def project_to_subspace(points: np.ndarray, tol: float = 1e-9):
-        """
-        Project a set of points into its intrinsic lower-dimensional affine subspace
-        if it is degenerate.
-
-        Parameters
-        ----------
-        points : (M, D) ndarray
-            Input points in N-D space.
-        tol : float
-            Tolerance for detecting rank deficiency.
-
-        Returns
-        -------
-        points_proj : (M, r) ndarray
-            Points projected into r-dimensional intrinsic subspace.
-        basis : (r, n) ndarray
-            Orthonormal basis of the intrinsic subspace.
-        offset : (D,) ndarray
-            Offset used for centering before projection (first point).
-        is_in_subspace : bool
-            True if the points lie in a lower-dimensional subspace.
-        """
-        points = np.asarray(points)
-        M, D = points.shape
-
-        # Compute rank
-        rank = intrinsic_dimension(points, tol=tol, return_centered_pts=False)
-        offset = points[0]
-        centered = points - offset
-        if rank < D:
-            # Project into lower-dimensional intrinsic subspace
-            U, S, Vt = np.linalg.svd(centered, full_matrices=False)
-            basis = Vt[:rank]  # orthonormal basis of intrinsic subspace
-            points_proj = centered @ basis.T
-            return points_proj, basis, offset, True
-
-        # Full-rank: return original points with identity basis
-        return centered, np.eye(D), offset, False
-
-    @staticmethod
-    def lift_from_subspace(points_sub, basis, offset):
-        """
-        Lift points from a lower-dimensional subspace back to the original N-D space.
-
-        Parameters
-        ----------
-        points_sub : (M, k) or (k,) ndarray
-            Points in the k-dimensional subspace (or a single point)
-        basis : (k, N) ndarray
-            Basis of the subspace (rows are basis vectors)
-        offset : (N,) ndarray
-            Offset of the subspace origin in N-D space
-
-        Returns
-        -------
-        points_nd : (M, N) or (N,) ndarray
-            Points mapped back to N-D space
-        """
-        points_sub = np.atleast_2d(points_sub)  # ensure 2D for matrix multiplication
-        lifted = offset + points_sub @ basis
-        if lifted.shape[0] == 1:
-            return lifted[0]  # return 1D array if input was a single point
-        return lifted
 
     @classmethod
     def best_fit(cls, X: np.ndarray, tol: float = 1e-9):
@@ -313,7 +410,7 @@ class EllipsoidND:
         # rank, centered, offset = intrinsic_dimension(X, tol=tol, return_centered_pts=True)
 
         # if rank < D:
-            X_sub, basis = cls.project_to_subspace(centered, intrinsic_dimension=rank)
+            # X_sub, basis = cls.project_to_subspace(centered, intrinsic_dimension=rank)
 
         X_sub, basis, offset, is_in_subspace = cls.project_to_subspace(X, tol=tol)
         if is_in_subspace:
@@ -485,7 +582,7 @@ class SphereND(EllipsoidND):
         # ------------------------------------------------------------------------
         # Check for degeneracy: not enough independent points to define a unique sphere
         # ------------------------------------------------------------------------
-        rank = intrinsic_dimension(points, tol=tol)
+        rank = GeometryND.intrinsic_dimension(points, tol=tol)
 
         if rank < M - 1:
             # Degenerate: no unique sphere possible
@@ -495,12 +592,12 @@ class SphereND(EllipsoidND):
         # Project points into intrinsic lower-dimensional subspace if rank < D
         # ------------------------------------------------------------------------
         if rank < D:
-            X_sub, basis, offset, _ = SphereND.project_to_subspace(points, tol=tol)
+            X_sub, basis, offset, _ = GeometryND.project_to_subspace(points, tol=tol)
         # if is_in_subspace:
             # Recursively fit in lower-dimensional space
             r_sub, c_sub = SphereND.fit_circumsphere_nd(X_sub, tol=tol)
             # Lift center back to original space
-            center_nd = SphereND.lift_from_subspace(c_sub, basis, offset)
+            center_nd = GeometryND.lift_from_subspace(c_sub, basis, offset)
             return r_sub, center_nd
 
         # ------------------------------------------------------------------------
@@ -616,25 +713,6 @@ class SphereND(EllipsoidND):
             Xb_nd = cls.lift_from_subspace(boundary_sub, basis, offset)
 
             return _return_(center=center_nd, radius=r_sub, Xb=Xb_nd)
-
-        # X_centered = X - X[0]
-        # rank = np.linalg.matrix_rank(X_centered, tol=eps)
-        #
-        # if rank < D:
-        #     # Points are degenerate → project to intrinsic subspace
-        #     U, S, Vt = np.linalg.svd(X_centered, full_matrices=False)
-        #     V_sub = Vt[:rank]  # basis of intrinsic subspace
-        #     X_sub = X_centered @ V_sub.T  # project onto subspace
-        #
-        #     # Minimal enclosing sphere in lower-dimensional space
-        #     r_sub, c_sub, boundary_sub = _welzl_exact_minimum_enclosing_nd_sphere(X_sub, eps=eps)
-        #
-        #     # Map center and boundary points back to original space
-        #     C_nd = X[0] + V_sub.T @ c_sub
-        #     B_nd = X[0] + (V_sub.T @ boundary_sub.T).T
-        #
-        #     # sphere = cls(center=C_nd, radius=r_sub)
-        #     return _return_(center=C_nd, radius=r_sub, Xb=B_nd)
     
         # --- Full-dimensional case ---
         # Reduce points via convex hull to speed up
@@ -662,69 +740,6 @@ class SphereND(EllipsoidND):
             r, c, Xb = _welzl_exact_minimum_enclosing_nd_sphere(Xi)
 
         return _return_(center=c, radius=r, Xb=Xb)
-
-# -------------------------------------------------------------------------
-# Helper functions for geometric checks
-# -------------------------------------------------------------------------
-def is_in_k_subspace(points, k, tol=1e-6):
-    """
-    Check if a set of points lies in a k-dimensional affine subspace in N-D space.
-
-    Parameters
-    ----------
-    points : array-like, shape (M, N)
-        List of M points in N-dimensional space.
-    k : int
-        Dimension of the subspace (1=line, 2=plane, etc.).
-    tol : float
-        Tolerance for linear dependence (smaller = stricter).
-
-    Returns
-    -------
-    bool
-        True if points lie in a k-dimensional subspace, False otherwise.
-    """
-    points = np.asarray(points)
-    return intrinsic_dimension(points, tol=tol) <= k
-
-def intrinsic_dimension(points, tol=1e-9, return_centered_pts=False):
-    """
-    Return the intrinsic affine dimension spanned by a set of points.
-    For example:
-      - 0: single point
-      - 1: colinear (line)
-      - 2: coplanar (plane)
-      - 3: volume, etc.
-    """
-    points = np.asarray(points)
-    M, D = points.shape
-
-    if M <= 1:
-        return 0
-    if M == 2:
-        return 1
-
-    # translate to origin of affine subspace
-    origin = points[0]
-    centered = points - origin
-
-    rank = np.linalg.matrix_rank(centered, tol=tol)
-    # if return_centered_pts:
-    #     return rank, centered, origin
-    return rank
-
-
-# ----------------------------
-# Convenience wrappers
-# ----------------------------
-
-def is_collinear(points, tol=1e-6):
-    """Check if the first three points are nearly collinear in N-D."""
-    return is_in_k_subspace(points, k=1, tol=tol)
-
-def is_coplanar(points, tol=1e-6):
-    """Check if the first four points are nearly coplanar in N-D."""
-    return is_in_k_subspace(points, k=2, tol=tol)
 
 # -------------------------------------------------------------------------
 # Minimum Volume Enclosing Sphere (MVES) using Khachiyan-style iteration
@@ -790,11 +805,9 @@ def _min_enclosing_sphere(X, tol=1e-7, max_iter=1000):
 __version__ = "0.1.0"
 
 __all__ = [
+    "GeometryND"
     "EllipsoidND",
     "SphereND",
-    "intrinsic_dimension",
-    "is_collinear",
-    "is_coplanar",
 ]
 
 
