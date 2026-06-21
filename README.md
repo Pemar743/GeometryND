@@ -6,9 +6,6 @@ The package provides tools for:
 
 - Exact minimum enclosing spheres in arbitrary dimensions (Welzl's algorithm)
 - Minimum-volume enclosing ellipsoids (Khachiyan's algorithm)
-- Least-squares ellipsoid fitting
-- RANSAC-based robust ellipsoid fitting
-- Intrinsic dimensionality detection
 - Automatic handling of degenerate point clouds (collinear, coplanar, lower-dimensional affine subspaces)
 
 ---
