@@ -56,7 +56,7 @@ if __name__ == "__main__":
 
 
     dataset = o3d.data.MonkeyModel()
-    # dataset = o3d.data.BunnyMesh()
+    dataset = o3d.data.BunnyMesh()
     # dataset = o3d.data.ArmadilloMesh()
     # dataset = o3d.data.SwordModel()
     # dataset = o3d.data.KnotMesh()
@@ -135,5 +135,5 @@ if __name__ == "__main__":
     # Visualization
     # -------------------------------------------------------------------------
 
-    o3d.visualization.draw_geometries([mesh, mbs_ls, mbs_pts],
-                                      window_name="Bounding Sphere", width=800, height=600)
+    o3d.visualization.draw_geometries([mesh, mbe_ls, mbe_pts, mbs_ls, mbs_pts],
+                                      window_name="Bounding Ellipsoid/Sphere", width=800, height=600)
