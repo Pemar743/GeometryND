@@ -33,8 +33,8 @@ General n-dimensional ellipsoid implementation.
 Supports:
 
 - Minimum-volume enclosing ellipsoid
-- Least-squares ellipsoid fitting
-- RANSAC fitting for noisy data
+- Least-squares ellipsoid fitting (todo)
+- RANSAC fitting for noisy data (todo)
 - Principal-axis extraction
 - Volume calculation
 - Residual computation
@@ -66,7 +66,7 @@ This allows robust handling of:
 
 ```python
 import numpy as np
-from geometrynd import SphereND
+from geometryND import SphereND
 
 pts = np.random.rand(100, 3)
 
@@ -82,7 +82,7 @@ print("Radius:", sphere.radius)
 
 ```python
 import numpy as np
-from geometrynd import EllipsoidND
+from geometryND import EllipsoidND
 
 pts = np.random.rand(100, 3)
 
@@ -94,11 +94,11 @@ print("Radii:", ellipsoid.radii)
 
 ---
 
-### Best-Fit Ellipsoid
+### Best-Fit Ellipsoid (todo)
 
 ```python
 import numpy as np
-from geometrynd import EllipsoidND
+from geometryND import EllipsoidND
 
 pts = np.random.rand(500, 3)
 
@@ -110,11 +110,11 @@ print(ellipsoid.radii)
 
 ---
 
-### Robust Ellipsoid Fit Using RANSAC
+### Robust Ellipsoid Fit Using RANSAC (todo)
 
 ```python
 import numpy as np
-from geometrynd import EllipsoidND
+from geometryND import EllipsoidND
 
 pts = np.random.rand(500, 3)
 
@@ -207,41 +207,6 @@ Residual definition:
 
 ---
 
-## Intrinsic Dimension Utilities
-
-### Determine Intrinsic Dimension
-
-```python
-from geometrynd import intrinsic_dimension
-
-rank = intrinsic_dimension(points)
-```
-
-Examples:
-
-```python
-rank = intrinsic_dimension(points)
-print(rank)
-```
-
-### Collinearity Test
-
-```python
-from geometrynd import is_collinear
-
-is_collinear(points)
-```
-
-### Coplanarity Test
-
-```python
-from geometrynd import is_coplanar
-
-is_coplanar(points)
-```
-
----
-
 ## Mathematical Definitions
 
 ### Ellipsoid
@@ -301,14 +266,14 @@ Uses:
 ![Bunny Bounding Ellipsoid](images/bounding_ellipsoid_bunny01.png "Minimum Bounding Ellipsoid & boundary points")
 ![Bunny Bounding Ellipsoid](images/bounding_ellipsoid_bunny02.png "Minimum Bounding Ellipsoid & boundary points")
 
-### Best-Fit Ellipsoid
+### Best-Fit Ellipsoid (todo)
 
 Uses:
 
 - Linear least-squares fitting
 - Automatic affine-subspace detection
 
-### Robust Fitting
+### Robust Fitting (todo)
 
 Uses:
 
@@ -333,7 +298,7 @@ pip install numpy scipy
 
 ```python
 import numpy as np
-from geometrynd import SphereND
+from geometryND import SphereND
 
 pts = np.random.randn(1000, 10)
 
@@ -352,13 +317,13 @@ Points lying exactly on a plane in 5D:
 ```python
 pts = np.random.rand(100, 2)
 
-embedded = np.zeros((100, 5))
+embedded = np.zeros((100, 3))
 embedded[:, :2] = pts
 
 ellipsoid, boundary = EllipsoidND.minimum_enclosing(embedded)
 ```
 
-The package automatically projects the points into their intrinsic 2D subspace, computes the solution, then lifts the result back into 5D.
+The package automatically projects the points into their intrinsic 2D subspace, computes the solution, then lifts the result back into 3D.
 
 ---
 
