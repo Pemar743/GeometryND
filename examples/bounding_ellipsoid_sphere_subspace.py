@@ -2,7 +2,7 @@ import numpy as np
 import open3d as o3d
 
 from geometryND import SphereND, EllipsoidND
-from examples.utils import shape_to_lineset
+from utils import shape_to_lineset
 
 if __name__ == "__main__":
 

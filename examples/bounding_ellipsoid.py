@@ -7,7 +7,7 @@ import open3d as o3d
 
 import geometryND
 from geometryND import SphereND, EllipsoidND
-from examples.utils import shape_to_lineset
+from utils import shape_to_lineset
 
 print(geometryND.__version__)
 

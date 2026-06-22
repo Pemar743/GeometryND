@@ -6,16 +6,15 @@ import numpy as np
 import open3d as o3d
 
 from geometryND import SphereND, EllipsoidND
-from examples.utils import shape_to_lineset
+from utils import shape_to_lineset
         
-
 if __name__ == "__main__":
 
-    project_to_xy_plane = True  # Set to True to project the mesh onto the XY plane
+    project_to_xy_plane = False  # Set to True to project the mesh onto the XY plane
 
     dataset = o3d.data.MonkeyModel()
     # dataset = o3d.data.BunnyMesh()
-    # dataset = o3d.data.ArmadilloMesh()
+    dataset = o3d.data.ArmadilloMesh()
     # dataset = o3d.data.SwordModel()
     # dataset = o3d.data.KnotMesh()
     # dataset = o3d.data.FlightHelmetModel()
