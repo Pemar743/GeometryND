@@ -33,7 +33,7 @@ if __name__ == "__main__":
     ####################
 
     ####################
-    # test for 2D points by projecting onto the XY plane
+    # test for degenerate 3D points by projecting onto the XY plane
     points[:, 2] = 0  # Project points onto the XY plane
     ellipsoid, boundary_points = EllipsoidND.minimum_enclosing(points)
     print("Projected Ellipsoid center:", ellipsoid.center)
