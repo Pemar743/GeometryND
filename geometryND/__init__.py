@@ -673,7 +673,6 @@ class SphereND(EllipsoidND):
                 B = np.empty((0, D))
             if n is None:
                 n = M
-
             max_boundary = D + 1
             if len(B) == max_boundary or n == 0:
                 r, c = cls.fit_circumsphere_nd(B)
@@ -702,15 +701,20 @@ class SphereND(EllipsoidND):
         M, D = X.shape
         if M == 0:
             raise ValueError("No points provided.")
-    
+
         # --- Check if points lie in a lower-dimensional subspace ---
-        X_sub, basis, offset, is_in_subspace = cls.project_to_subspace(X)
+        X_sub, basis, offset, is_in_subspace = GeometryND.project_to_subspace(X)
         if is_in_subspace:
+            hull = ConvexHull(X_sub)
+            X_sub = X_sub[hull.vertices]
+            X_sub = np.unique(X_sub, axis=0)
+            # --- Randomly permute points for Welzl recursion ----------------------
+            X_sub = np.random.permutation(X_sub)
             r_sub, c_sub, boundary_sub = _welzl_exact_minimum_enclosing_nd_sphere(X_sub, eps=eps)
             # center_nd, A_nd = cls.lift_from_subspace(c_sub, r_sub, basis, offset)
             # Map center and boundary points back to original space
-            center_nd = cls.lift_from_subspace(c_sub, basis, offset)
-            Xb_nd = cls.lift_from_subspace(boundary_sub, basis, offset)
+            center_nd = GeometryND.lift_from_subspace(c_sub, basis, offset)
+            Xb_nd = GeometryND.lift_from_subspace(boundary_sub, basis, offset)
 
             return _return_(center=center_nd, radius=r_sub, Xb=Xb_nd)
     
