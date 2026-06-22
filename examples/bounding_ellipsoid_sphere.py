@@ -14,7 +14,7 @@ if __name__ == "__main__":
 
     dataset = o3d.data.MonkeyModel()
     # dataset = o3d.data.BunnyMesh()
-    dataset = o3d.data.ArmadilloMesh()
+    # dataset = o3d.data.ArmadilloMesh()
     # dataset = o3d.data.SwordModel()
     # dataset = o3d.data.KnotMesh()
     # dataset = o3d.data.FlightHelmetModel()

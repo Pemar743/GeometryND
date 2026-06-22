@@ -412,7 +412,7 @@ class EllipsoidND(GeometryND):
         # if rank < D:
             # X_sub, basis = cls.project_to_subspace(centered, intrinsic_dimension=rank)
 
-        X_sub, basis, offset, is_in_subspace = cls.project_to_subspace(X, tol=tol)
+        X_sub, basis, offset, is_in_subspace = GeometryND.project_to_subspace(X, tol=tol)
         if is_in_subspace:
             # Recursively compute ellipsoid in lower-dimensional space
             ellipsoid_sub, *extra = cls.minimum_enclosing(
@@ -444,7 +444,8 @@ class EllipsoidND(GeometryND):
 
         # --- Full-rank case ---
         # Reduce points via convex hull for numerical stability if more than D+1 points
-        if N_points > D + 1:
+        # ConvexHull is only valid for dimension >= 2.
+        if D >= 2 and N_points > D + 1:
             hull = ConvexHull(X)
             X = X[hull.vertices]
             N_points = len(X)
@@ -705,8 +706,9 @@ class SphereND(EllipsoidND):
         # --- Check if points lie in a lower-dimensional subspace ---
         X_sub, basis, offset, is_in_subspace = GeometryND.project_to_subspace(X)
         if is_in_subspace:
-            hull = ConvexHull(X_sub)
-            X_sub = X_sub[hull.vertices]
+            if X_sub.shape[1] > 1 and len(X_sub) > X_sub.shape[1] + 1:
+                hull = ConvexHull(X_sub)
+                X_sub = X_sub[hull.vertices]
             X_sub = np.unique(X_sub, axis=0)
             # --- Randomly permute points for Welzl recursion ----------------------
             X_sub = np.random.permutation(X_sub)
