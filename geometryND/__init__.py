@@ -187,6 +187,9 @@ class EllipsoidND(GeometryND):
     def _eigendecomposition(self):
         """Compute and cache eigenvalues/eigenvectors of A."""
         eigvals, eigvecs = np.linalg.eigh(self.A)
+        order = np.argsort(np.where(np.isclose(eigvals, 0.0, atol=1e-12), np.inf, eigvals))
+        eigvals = eigvals[order]
+        eigvecs = eigvecs[:, order]
         return eigvals, eigvecs
 
     @property
@@ -238,12 +241,129 @@ class EllipsoidND(GeometryND):
         return r
 
     @classmethod
-    def best_fit(cls, X: np.ndarray, tol: float = 1e-9):
+    def _lstsq_fit(cls, X):
+        """
+        Fit an ellipsoid to a set of points using least squares.
+        This is a helper method for best_fit and RANSAC.
+        """
+        X = np.asarray(X)
+        N, n = X.shape
+
+        num_coeffs = n * (n + 1) // 2 + n
+        if N < num_coeffs:
+            raise ValueError(
+                f"Not enough points to fit {n}-D ellipsoid; "
+                f"need at least {num_coeffs}, got {N}"
+            )
+
+        i_idx, j_idx = np.triu_indices(n)
+        Q = X[:, i_idx] * X[:, j_idx]
+        for idx, (ii, jj) in enumerate(zip(i_idx, j_idx)):
+            if ii != jj:
+                Q[:, idx] *= 2.0
+        L = X
+        D = np.hstack([Q, L])
+        rhs = np.ones(N)
+
+        coeffs, _, _, _ = np.linalg.lstsq(D, rhs, rcond=None)
+
+        A = np.zeros((n, n))
+        for idx, (ii, jj) in enumerate(zip(i_idx, j_idx)):
+            value = coeffs[idx]
+            A[ii, jj] = value
+            A[jj, ii] = value
+        b = coeffs[len(i_idx):]
+
+        try:
+            center = -0.5 * np.linalg.solve(A, b)
+        except np.linalg.LinAlgError:
+            center = -0.5 * np.linalg.lstsq(A, b, rcond=None)[0]
+
+        # The least-squares solve fits the quadratic form
+        # x^T A x + b^T x = 1. To turn it into the centered form
+        # (x - c)^T A' (x - c) = 1, the fitted coefficients are scaled by
+        # the factor 1 / (1 + c^T A c) when the center is recovered as
+        # c = -0.5 * A^{-1} b.
+        denom = 1 + center.T @ A @ center
+        if abs(denom) < 1e-12:
+            denom = 1.0
+        A_centered = A / denom
+
+        return center, A_centered
+
+    @classmethod
+    def _non_linear_lstsq_refine(cls, X, center, A):
+        """
+        Refine the ellipsoid fit using non-linear least squares.
+        """
+        X = np.asarray(X)
+        n = X.shape[1]
+        i_idx, j_idx = np.triu_indices(n)
+
+        def residuals_func(params):
+            c = params[:n]
+            coeffs = params[n:]
+            A_fit = np.zeros((n, n))
+            for idx, (ii, jj) in enumerate(zip(i_idx, j_idx)):
+                value = coeffs[idx]
+                A_fit[ii, jj] = value
+                A_fit[jj, ii] = value
+            X_shift = X - c
+            return np.einsum('ij,jk,ik->i', X_shift, A_fit, X_shift) - 1
+
+        initial_guess = np.hstack([center, A[i_idx, j_idx]])
+        result = least_squares(residuals_func, initial_guess)
+        center = result.x[:n]
+        coeffs = result.x[n:]
+        A_fit = np.zeros((n, n))
+        for idx, (ii, jj) in enumerate(zip(i_idx, j_idx)):
+            value = coeffs[idx]
+            A_fit[ii, jj] = value
+            A_fit[jj, ii] = value
+
+        return center, A_fit
+
+    @classmethod
+    def _ransac(cls, X, max_iter=100, tol=1e-3):
+        """
+        Internal method to perform RANSAC fitting for the ellipsoid.
+        """
+        X = np.asarray(X)
+        N, n = X.shape
+        best_inliers = []
+        best_model = None
+
+        min_pts = n * (n + 1) // 2 + n
+        if N < min_pts:
+            raise ValueError(f"Need at least {min_pts} points to fit {n}-D ellipsoid.")
+
+        for _ in range(max_iter):
+            idx = np.random.choice(N, min_pts, replace=False)
+            subset = X[idx]
+
+            try:
+                center, A = cls._lstsq_fit(subset)
+            except ValueError:
+                continue
+
+            model = cls(center=center, A=A)
+            res = model.get_residuals(X)
+            inliers = np.where(np.abs(res) <= tol)[0]
+
+            if len(inliers) > len(best_inliers):
+                best_inliers = inliers
+                best_model = model
+
+        if best_model is None:
+            raise RuntimeError("RANSAC failed to find a valid ellipsoid.")
+
+        return X[best_inliers], best_model.center, best_model.A
+
+    @classmethod
+    def best_fit(cls, X: np.ndarray, tol: float = 1e-9, ransac_iter: int = 0, ransac_tol: float = 1e-3, non_linear: bool = False):
         """
         Fit an n-dimensional ellipsoid to a set of points using least squares,
         automatically handling degenerate (lower-rank) point clouds.
-        The constant term c is normalized to 1, reducing the minimum number of
-        points required by 1.
 
         Parameters
         ----------
@@ -251,6 +371,13 @@ class EllipsoidND(GeometryND):
             Input point cloud.
         tol : float
             Tolerance for detecting rank deficiency / degeneracy.
+        ransac_iter : int
+            Number of iterations for RANSAC. If <= 0, RANSAC is not used.
+        ransac_tol : float
+            Tolerance for RANSAC inlier threshold.
+        non_linear : bool
+            If True, refine the fit using non-linear least squares after the
+            initial linear fit.
 
         Returns
         -------
@@ -260,19 +387,22 @@ class EllipsoidND(GeometryND):
         X = np.asarray(X)
         N, n = X.shape
 
-        # --- Check for points being wholly in lower subspace ---
+        tol = abs(tol)
+        ransac_tol = abs(ransac_tol)
+
         X_proj, basis, offset, is_in_subspace = cls.project_to_subspace(X, tol=tol)
         if is_in_subspace:
-            # recursively fit in lower-dim space
-            ellipsoid_sub = cls.best_fit(X_proj)
-            # Map center back to original N-D
+            ellipsoid_sub = cls.best_fit(
+                X_proj,
+                tol=tol,
+                ransac_iter=ransac_iter,
+                ransac_tol=ransac_tol,
+                non_linear=non_linear,
+            )
             center_nd = cls.lift_from_subspace(ellipsoid_sub.center, basis, offset)
-            # Map shape matrix back
             A_nd = basis.T @ ellipsoid_sub.A @ basis
             return cls(center_nd, A_nd)
 
-        # --- Full-rank case ---
-        # Minimum points required to fit with c normalized to 1
         num_coeffs = n * (n + 1) // 2 + n
         if N < num_coeffs:
             raise ValueError(
@@ -280,29 +410,15 @@ class EllipsoidND(GeometryND):
                 f"need at least {num_coeffs}, got {N}"
             )
 
-        # --- Build quadratic term matrix ---
-        i_idx, j_idx = np.triu_indices(n)
-        Q = X[:, i_idx] * X[:, j_idx]  # Quadratic terms
-        L = X  # Linear terms
-        D = np.hstack([Q, L])  # c is fixed to 1
-        rhs = np.ones(N)  # normalized
+        if N > num_coeffs and ransac_iter > 0:
+            X, center, A = cls._ransac(X, max_iter=ransac_iter, tol=ransac_tol)
+        else:
+            center, A = cls._lstsq_fit(X)
 
-        # Solve least squares
-        coeffs, residuals, rank_ls, s = np.linalg.lstsq(D, rhs, rcond=None)
+        if non_linear:
+            center, A = cls._non_linear_lstsq_refine(X, center, A)
 
-        # Extract A
-        A = np.zeros((n, n))
-        A[i_idx, j_idx] = coeffs[:len(i_idx)]
-        A[j_idx, i_idx] = coeffs[:len(i_idx)]  # symmetric
-        b = coeffs[len(i_idx):]
-
-        # --- Center of ellipsoid ---
-        center = -0.5 * np.linalg.solve(A, b)
-
-        # --- Shape matrix normalized so that (x - center)^T A (x - center) = 1 ---
-        A_centered = A / (1 - center.T @ A @ center - b.T @ center - 1)  # c=1
-
-        return cls(center, A_centered)
+        return cls(center=center, A=A)
 
     @classmethod
     def from_points_ransac(cls, X, max_iter=100, tol=1e-3):
@@ -753,6 +869,7 @@ class SphereND(EllipsoidND):
             center, radius = cls._lstsq_fit(X)
 
             if non_linear:  # Refine with non-linear least squares
+                # use linear least squares result as initial guess
                 center, radius = cls._non_linear_lstsq_refine(X, center, radius)
         else:
             radius, center = cls.fit_circumsphere_nd(X, tol=tol)
