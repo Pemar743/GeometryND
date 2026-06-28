@@ -1,6 +1,7 @@
 import sys
 
 from scipy.spatial import ConvexHull
+from scipy.optimize import least_squares
 import numpy as np
 import math
 from abc import ABC, abstractmethod
@@ -615,6 +616,150 @@ class SphereND(EllipsoidND):
 
         radius = np.linalg.norm(points[0] - center)
         return radius, center
+
+    @classmethod
+    def _lstsq_fit(cls, X):
+        """
+        Fit a sphere to a set of points using least squares.
+        This is a helper method for best_fit and RANSAC.
+        """
+        X = np.asarray(X)
+        N, d = X.shape
+
+        # construct generalised matrix A: columns are 2*coords, final column is 1
+        A = np.zeros((N, d + 1))
+        A[:, :d] = 2 * X
+        A[:, d] = 1
+
+        # construct vector b: sum of squared coords for each point
+        b = np.sum(X ** 2, axis=1)
+
+        # Solve least squares: A @ [c; r^2 - |c|^2] = b
+        sol, residuals, rank_ls, s = np.linalg.lstsq(A, b, rcond=None)
+        center = sol[:d]
+        radius_sq = sol[d] + np.sum(center ** 2)
+        radius = np.sqrt(radius_sq)
+
+        return center, radius
+
+    @classmethod
+    def _non_linear_lstsq_refine(cls, X, center, radius):
+        """
+        Refine the sphere fit using non-linear least squares.
+        """
+        # Optional: refine using non-linear least squares (e.g., Levenberg-Marquardt)
+        
+        d = X.shape[1]
+
+        def residuals_func(params):
+            c = params[:d]
+            r = params[d]
+            return np.linalg.norm(X - c, axis=1) - r
+
+        initial_guess = np.hstack([center, radius])
+        result = least_squares(residuals_func, initial_guess)
+        center = result.x[:d]
+        radius = result.x[d]
+
+        return center, radius
+    
+    @classmethod
+    def _ransac(cls, X, max_iter=100, tol=1e-3):
+        """
+        Internal method to perform RANSAC fitting for the sphere.
+        """
+        X = np.asarray(X)
+        N, d = X.shape
+        best_inliers = []
+        best_model = None
+
+        # Minimum points required to fit a sphere is n + 1 (for D dimensions)
+        min_pts = d + 1
+
+        if N < min_pts:
+            raise ValueError(f"Need at least {min_pts} points to fit {d}-D sphere.")
+
+        for _ in range(max_iter):
+            # Random subset
+            idx = np.random.choice(N, min_pts, replace=False)
+            subset = X[idx]
+
+            try:
+                center, radius = cls._lstsq_fit(subset)
+            except ValueError:
+                continue
+
+            # Compute residuals
+            sphere_model = cls(center=center, radius=radius)
+            res = sphere_model.get_residuals(X)
+            inliers = np.where(np.abs(res) <= tol)[0]
+
+            if len(inliers) > len(best_inliers):
+                best_inliers = X[inliers]
+                best_model = sphere_model
+        if best_model is None:
+            raise RuntimeError("RANSAC failed to find a valid sphere.")
+        return best_inliers, best_model.center, best_model.radius
+
+    @classmethod
+    def best_fit(cls, X: np.ndarray, tol: float = 1e-9, ransac_iter: int = 0, ransac_tol: float = 1e-3, non_linear: bool = False):
+        """
+        Fit an n-dimensional sphere to a set of points using least squares,
+        automatically handling degenerate (lower-rank) point clouds.
+
+        Parameters
+        ----------
+        X : (N, n) ndarray
+            Input point cloud.
+        tol : float
+            Tolerance for detecting rank deficiency / degeneracy.
+        ransac_iter : int
+            Number of iterations for RANSAC. If <= 0, RANSAC is not used.
+        ransac_tol : float
+            Tolerance for RANSAC inlier threshold.
+        non_linear : bool
+            If True, refine the fit using non-linear least squares after the initial linear fit.
+
+        Returns
+        -------
+        SphereND
+            Sphere fitted to the point cloud.
+        """
+        X = np.asarray(X)
+        N, d = X.shape
+
+        tol = abs(tol)
+        ransac_tol = abs(ransac_tol)
+
+        # --- Check for points being wholly in lower subspace ---
+        X_proj, basis, offset, is_in_subspace = cls.project_to_subspace(X, tol=tol)
+        if is_in_subspace:
+            # recursively fit in lower-dim space
+            sphere_sub = cls.best_fit(X_proj, tol=tol,
+                                      ransac_iter=ransac_iter,
+                                      ransac_tol=ransac_tol,
+                                      non_linear=non_linear)
+            # Map center back to original N-D
+            center_nd = cls.lift_from_subspace(sphere_sub.center, basis, offset)
+            return cls(center_nd, sphere_sub.radius)
+
+        # --- Full-rank case ---
+        # Fit circumsphere to points
+        if N > d + 1:
+            if ransac_iter > 0:  # Use RANSAC to handle outliers
+                X, center, radius = cls._ransac(X, max_iter=ransac_iter, tol=ransac_tol)
+            
+            # get linear least squares fit
+            center, radius = cls._lstsq_fit(X)
+
+            if non_linear:  # Refine with non-linear least squares
+                center, radius = cls._non_linear_lstsq_refine(X, center, radius)
+        else:
+            radius, center = cls.fit_circumsphere_nd(X, tol=tol)
+            if np.isinf(radius) or np.isnan(radius):
+                raise ValueError("Degenerate point configuration; cannot fit a unique sphere.")
+
+        return cls(center=center, radius=radius)
 
     @classmethod
     def minimum_enclosing(cls, X, eps=1e-12):
