@@ -19,6 +19,8 @@ Specialized n-dimensional sphere implementation.
 Supports:
 
 - Exact minimum enclosing sphere
+- Least-squares best-fit sphere fitting
+- Optional RANSAC and non-linear refinement for noisy data
 - Boundary-point identification
 - Collinear and lower-dimensional point sets
 - Surface-area and volume calculations
@@ -71,6 +73,33 @@ sphere, boundary_pts = SphereND.minimum_enclosing(pts)
 
 print("Center:", sphere.center)
 print("Radius:", sphere.radius)
+```
+
+---
+
+### Best-Fit Sphere
+
+```python
+import numpy as np
+from geometryND import SphereND
+
+pts = np.random.rand(200, 3)
+
+sphere = SphereND.best_fit(pts)
+
+print("Center:", sphere.center)
+print("Radius:", sphere.radius)
+```
+
+`SphereND.best_fit(...)` performs a least-squares sphere fit and automatically handles degenerate or lower-dimensional point clouds by projecting them into their intrinsic subspace before fitting. For noisy data, you can also enable RANSAC and non-linear refinement:
+
+```python
+sphere = SphereND.best_fit(
+    pts,
+    ransac_iter=100,
+    ransac_tol=1e-3,
+    non_linear=True,
+)
 ```
 
 ---
